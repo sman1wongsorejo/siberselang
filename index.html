@@ -382,6 +382,37 @@
           </div>
         </div>
 
+        <!-- GALERI DOKUMENTASI BERSELANG (4 FOTO / SLIDE, AUTO 10 DETIK) -->
+        <div class="eco-card p-6 rounded-2xl no-print">
+          <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
+            <div>
+              <h3 class="font-bold text-base md:text-lg text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-images text-emerald-600"></i> Galeri Dokumentasi BERSELANG
+              </h3>
+              <p class="text-xs text-slate-500">Foto kegiatan terbaru dari Google Drive &bull; Slide otomatis setiap 10 detik</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="galeriCounter" class="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                Slide 1/1
+              </span>
+              <button onclick="prevGaleriSlide()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition" title="Slide Sebelumnya">
+                <i class="fa-solid fa-chevron-left text-xs"></i>
+              </button>
+              <button onclick="nextGaleriSlide()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition" title="Slide Berikutnya">
+                <i class="fa-solid fa-chevron-right text-xs"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Grid 4 Foto -->
+          <div id="galeriGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="col-span-full text-center py-8 text-slate-400 text-sm">Memuat dokumentasi foto...</div>
+          </div>
+
+          <!-- Indikator Titik (Dots) -->
+          <div id="galeriDots" class="flex justify-center gap-1.5 mt-4"></div>
+        </div>
+
         <!-- TABEL RIWAYAT LAPORAN HARIAN -->
         <div class="eco-card p-6 rounded-2xl">
           <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
@@ -659,6 +690,11 @@
     let currentServerDate = getTodayLocal();
     let currentServerPeriode = currentServerDate.slice(0, 7);
 
+    // State Galeri
+    let galeriPhotos = [];
+    let galeriPage = 0;
+    let galeriTimer = null;
+
     function getTodayLocal() {
       const d = new Date();
       const offset = d.getTimezoneOffset() * 60000;
@@ -900,6 +936,7 @@
         renderTabelLaporan(cachedLaporan);
         renderAktifAndChart(cachedLaporan);
         renderVoteSection(votes);
+        renderGaleri(cachedLaporan);
 
         // Tabel Monev
         document.getElementById("tabelMonevBody").innerHTML = monev.map(m => `
@@ -1014,7 +1051,7 @@
       });
     }
 
-    // --- LEADERBOARD & TABEL VOTE KELAS TERBERSIH (ANTI-FORMAT TANGGAL SHEETS) ---
+    // --- LEADERBOARD & TABEL VOTE KELAS TERBERSIH ---
     function renderVoteSection(votes) {
       const [tahunAktif, bulanAktif] = currentServerPeriode.split("-");
 
@@ -1070,6 +1107,107 @@
           <td class="py-3 px-3 text-slate-600">${v.Alasan || '-'}</td>
         </tr>
       `).join("") || '<tr><td colspan="4" class="py-6 text-center text-slate-400">Belum ada suara masuk periode ini.</td></tr>';
+    }
+
+    // --- GALERI DOKUMENTASI DRIVE (4 FOTO / SLIDE, AUTO 10 DETIK) ---
+    function getDriveThumbUrl(url) {
+      const match = String(url).match(/id=([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return {
+          thumb: `https://drive.google.com/thumbnail?id=${match[1]}&sz=w800`,
+          fallback: `https://lh3.googleusercontent.com/d/${match[1]}=w800`,
+          original: url
+        };
+      }
+      return { thumb: url, fallback: url, original: url };
+    }
+
+    function renderGaleri(laporan) {
+      galeriPhotos = laporan
+        .filter(l => l.FotoURL && String(l.FotoURL).startsWith("http"))
+        .map(l => ({
+          ...getDriveThumbUrl(l.FotoURL),
+          kelas: l.Kelas,
+          tanggal: String(l.Tanggal).slice(0, 10),
+          pelapor: l.Pelapor || l.RolePelapor,
+          skor: l.Skor
+        }));
+
+      galeriPage = 0;
+      if (galeriTimer) clearInterval(galeriTimer);
+
+      if (galeriPhotos.length === 0) {
+        document.getElementById("galeriGrid").innerHTML =
+          '<div class="col-span-full text-center py-8 text-slate-400 text-sm">Belum ada foto dokumentasi yang diunggah.</div>';
+        document.getElementById("galeriCounter").innerText = "0 Foto";
+        document.getElementById("galeriDots").innerHTML = "";
+        return;
+      }
+
+      showGaleriSlide();
+      startGaleriTimer();
+    }
+
+    function showGaleriSlide() {
+      const perPage = 4;
+      const totalPages = Math.ceil(galeriPhotos.length / perPage);
+      if (galeriPage >= totalPages) galeriPage = 0;
+      if (galeriPage < 0) galeriPage = totalPages - 1;
+
+      const start = galeriPage * perPage;
+      const slice = galeriPhotos.slice(start, start + perPage);
+
+      document.getElementById("galeriCounter").innerText = `Slide ${galeriPage + 1}/${totalPages}`;
+
+      document.getElementById("galeriGrid").innerHTML = slice.map(item => `
+        <a href="${item.original}" target="_blank" class="group relative rounded-2xl overflow-hidden border border-emerald-100 bg-slate-100 shadow-sm hover:shadow-md transition fade-in block">
+          <div class="aspect-[4/3] w-full overflow-hidden bg-slate-200">
+            <img src="${item.thumb}" onerror="this.onerror=null;this.src='${item.fallback}';" alt="Dokumentasi ${item.kelas}" loading="lazy"
+              class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+          </div>
+          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/85 via-slate-900/40 to-transparent p-3 text-white">
+            <div class="flex justify-between items-center">
+              <span class="px-2 py-0.5 rounded-md bg-emerald-500 text-[11px] font-extrabold">${item.kelas}</span>
+              <span class="text-[10px] font-semibold text-emerald-100"><i class="fa-regular fa-calendar mr-1"></i>${item.tanggal}</span>
+            </div>
+            <p class="text-[11px] text-slate-200 mt-1 truncate">${item.pelapor} &bull; Skor ${item.skor}%</p>
+          </div>
+        </a>
+      `).join("");
+
+      document.getElementById("galeriDots").innerHTML = Array.from({ length: totalPages }, (_, i) => `
+        <button onclick="goToGaleriSlide(${i})" class="h-2 rounded-full transition-all ${i === galeriPage ? 'w-6 bg-emerald-500' : 'w-2 bg-slate-300 hover:bg-emerald-300'}"></button>
+      `).join("");
+    }
+
+    function startGaleriTimer() {
+      if (galeriTimer) clearInterval(galeriTimer);
+      if (galeriPhotos.length > 4) {
+        galeriTimer = setInterval(() => {
+          galeriPage++;
+          showGaleriSlide();
+        }, 10000);
+      }
+    }
+
+    function nextGaleriSlide() {
+      if (!galeriPhotos.length) return;
+      galeriPage++;
+      showGaleriSlide();
+      startGaleriTimer();
+    }
+
+    function prevGaleriSlide() {
+      if (!galeriPhotos.length) return;
+      galeriPage--;
+      showGaleriSlide();
+      startGaleriTimer();
+    }
+
+    function goToGaleriSlide(idx) {
+      galeriPage = idx;
+      showGaleriSlide();
+      startGaleriTimer();
     }
 
     function renderTabelLaporan(list) {
