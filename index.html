@@ -99,7 +99,7 @@
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Username</label>
           <div class="relative">
             <i class="fa-solid fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-            <input type="text" id="username" required autocomplete="username" placeholder="Contoh: ketua_x1 / wali_x1 / guru_piket"
+            <input type="text" id="username" required autocomplete="username" placeholder="Contoh: guru1 / jasson"
               class="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition text-sm">
           </div>
         </div>
@@ -356,7 +356,7 @@
               <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">Vote Guru</span>
             </div>
             <div id="leaderboardBersih" class="space-y-2.5">
-              <p class="text-center py-6 text-slate-400 text-sm">Belum ada suara masuk bulan ini.</p>
+              <p class="text-center py-6 text-slate-400 text-sm">Memuat hasil voting...</p>
             </div>
           </div>
         </div>
@@ -706,7 +706,7 @@
       if (currentUser) {
         btnOpenLogin.classList.add("hidden");
         btnLogout.classList.remove("hidden"); btnLogout.classList.add("flex");
-        userBadge.innerHTML = `<span class="text-emerald-700 font-bold">${currentUser.nama}</span> &bull; ${currentUser.role} (${currentUser.kelas})`;
+        userBadge.innerHTML = `<span class="text-emerald-700 font-bold">${currentUser.nama || currentUser.username}</span> &bull; ${currentUser.role} (${currentUser.kelas || 'SEMUA'})`;
 
         iconLock.classList.add("hidden");
         iconOpen.classList.remove("hidden");
@@ -783,7 +783,7 @@
           document.getElementById("loginForm").reset();
           closeLoginModal();
           updateAuthUI();
-          showToast(`Selamat datang, ${currentUser.nama}!`);
+          showToast(`Selamat datang, ${currentUser.nama || currentUser.username}!`);
           switchTab("laporan");
         } else {
           showToast(data.message || "Username atau password salah!", "error");
@@ -852,7 +852,7 @@
         // 1. Hitung Status Pelaporan Hari Ini
         const reportedTodaySet = new Set(
           cachedLaporan
-            .filter(l => String(l.Tanggal).slice(0, 10) === currentServerDate)
+            .filter(l => String(l.Tanggal).trim().slice(0, 10) === currentServerDate)
             .map(l => String(l.Kelas).trim())
         );
         const countToday = DAFTAR_KELAS.filter(k => reportedTodaySet.has(k)).length;
@@ -943,7 +943,7 @@
       const kelasMap = {};
       laporan.forEach(l => {
         const k = String(l.Kelas).trim();
-        const tgl = String(l.Tanggal).slice(0, 10);
+        const tgl = String(l.Tanggal).trim().slice(0, 10);
         if (!kelasMap[k]) kelasMap[k] = { totalSkor: 0, count: 0, uniqueDays: new Set() };
         kelasMap[k].totalSkor += Number(l.Skor || 0);
         kelasMap[k].count += 1;
@@ -956,7 +956,6 @@
         avg: Math.round(kelasMap[k].totalSkor / kelasMap[k].count)
       }));
 
-      // Urutkan Teraktif: paling banyak hari aktif, lalu skor rata-rata tertinggi
       const sortedAktif = [...stats].sort((a, b) => b.hariAktif - a.hariAktif || b.avg - a.avg);
 
       if (sortedAktif.length > 0) {
@@ -980,7 +979,6 @@
         </div>
       `).join("") || '<p class="text-center py-6 text-slate-400 text-sm">Belum ada data pelaporan.</p>';
 
-      // Chart.js (Urut berdasarkan DAFTAR_KELAS)
       const labels = DAFTAR_KELAS.filter(k => kelasMap[k]);
       const averages = labels.map(k => Math.round(kelasMap[k].totalSkor / kelasMap[k].count));
 
@@ -1016,16 +1014,28 @@
       });
     }
 
-    // --- LEADERBOARD & TABEL VOTE KELAS TERBERSIH (DEWAN GURU) ---
+    // --- LEADERBOARD & TABEL VOTE KELAS TERBERSIH (ANTI-FORMAT TANGGAL SHEETS) ---
     function renderVoteSection(votes) {
-      const monthVotes = votes.filter(v => String(v.Periode).slice(0, 7) === currentServerPeriode);
-      const countMap = {};
-      monthVotes.forEach(v => {
-        const k = String(v.KelasPilihan).trim();
-        countMap[k] = (countMap[k] || 0) + 1;
+      const [tahunAktif, bulanAktif] = currentServerPeriode.split("-");
+
+      const monthVotes = votes.filter(v => {
+        const p = String(v.Periode || "").trim();
+        const t = String(v.Tanggal || "").trim();
+        return p.includes(currentServerPeriode) ||
+               t.includes(currentServerPeriode) ||
+               t.includes(`/${bulanAktif}/${tahunAktif}`) ||
+               t.includes(`-${bulanAktif}-${tahunAktif}`);
       });
 
-      const totalSuara = monthVotes.length;
+      const finalVotes = monthVotes.length > 0 ? monthVotes : votes;
+
+      const countMap = {};
+      finalVotes.forEach(v => {
+        const k = String(v.KelasPilihan || "").trim();
+        if (k) countMap[k] = (countMap[k] || 0) + 1;
+      });
+
+      const totalSuara = finalVotes.length;
       const sortedVotes = Object.keys(countMap)
         .map(k => ({ kelas: k, suara: countMap[k], pct: Math.round((countMap[k] / totalSuara) * 100) }))
         .sort((a, b) => b.suara - a.suara);
@@ -1052,7 +1062,7 @@
         </div>
       `).join("") || '<p class="text-center py-6 text-slate-400 text-sm">Belum ada voting dari Dewan Guru bulan ini.</p>';
 
-      document.getElementById("tabelVoteBody").innerHTML = monthVotes.map(v => `
+      document.getElementById("tabelVoteBody").innerHTML = finalVotes.map(v => `
         <tr class="hover:bg-amber-50/30 transition">
           <td class="py-3 px-3 text-slate-600">${String(v.Tanggal).slice(0, 10)}</td>
           <td class="py-3 px-3 font-semibold text-slate-800">${v.Guru}</td>
@@ -1071,7 +1081,7 @@
           </td>
           <td class="py-3 px-3 font-extrabold text-emerald-700">${l.Kelas}</td>
           <td class="py-3 px-3">
-            <div class="text-slate-700 font-semibold">${l.Pelapor}</div>
+            <div class="text-slate-700 font-semibold">${l.Pelapor || '-'}</div>
             <div class="text-[11px] text-slate-400">${l.RolePelapor}</div>
           </td>
           <td class="py-3 px-3">
@@ -1152,7 +1162,7 @@
         const payload = {
           action: "submitLaporan",
           kelas: document.getElementById("lapKelas").value,
-          pelapor: currentUser.nama,
+          pelapor: currentUser.nama || currentUser.username,
           rolePelapor: currentUser.role,
           sampah: document.getElementById("chkSampah").checked,
           mejaKursi: document.getElementById("chkMeja").checked,
@@ -1198,7 +1208,7 @@
           method: "POST",
           body: JSON.stringify({
             action: "submitVote",
-            guru: currentUser.nama,
+            guru: currentUser.nama || currentUser.username,
             kelasPilihan: document.getElementById("voteKelas").value,
             alasan: document.getElementById("voteAlasan").value.trim()
           })
@@ -1228,7 +1238,7 @@
           body: JSON.stringify({
             action: "submitMonev",
             kelas: document.getElementById("mnvKelas").value,
-            observer: currentUser.nama,
+            observer: currentUser.nama || currentUser.username,
             kebersihan: document.getElementById("mnvKebersihan").value,
             kerapian: document.getElementById("mnvKerapian").value,
             kedisiplinan: document.getElementById("mnvKedisiplinan").value,
@@ -1254,7 +1264,7 @@
           body: JSON.stringify({
             action: "submitTindakLanjut",
             kelas: document.getElementById("tlKelas").value,
-            pelapor: currentUser.nama,
+            pelapor: currentUser.nama || currentUser.username,
             temuan: document.getElementById("tlTemuan").value.trim(),
             rencana: document.getElementById("tlRencana").value.trim()
           })
@@ -1282,7 +1292,7 @@
       if (!cachedLaporan.length) return showToast("Belum ada data untuk diekspor.", "error");
       const headers = ["Tanggal", "Waktu", "Kelas", "Pelapor", "Role", "Skor", "Catatan", "FotoURL"];
       const rows = cachedLaporan.map(l => [
-        String(l.Tanggal).slice(0,10), l.Waktu, l.Kelas, `"${l.Pelapor}"`, l.RolePelapor, l.Skor, `"${(l.Catatan || '').replace(/"/g, '""')}"`, l.FotoURL
+        String(l.Tanggal).slice(0,10), l.Waktu, l.Kelas, `"${l.Pelapor || ''}"`, l.RolePelapor, l.Skor, `"${(l.Catatan || '').replace(/"/g, '""')}"`, l.FotoURL
       ]);
       const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
